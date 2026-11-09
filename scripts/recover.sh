@@ -3,7 +3,8 @@ set -Eeuo pipefail
 umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TF_DIR="$ROOT/terraform/decoys"
+TF_DIR="$ROOT/terraform/$1"
+
 
 case "${1:-}" in
   opencanary)
@@ -64,8 +65,17 @@ trap finish EXIT
 
 SSH=(ssh -o BatchMode=yes -o ConnectTimeout=10 decoy)
 
-OLD_ID="$("${SSH[@]}" docker inspect "$CONTAINER" |
-  jq -er '.[0].Id')"
+#OLD_ID="$("${SSH[@]}" docker inspect "$CONTAINER" |
+#  jq -er '.[0].Id')"
+
+# Сначала проверяем доступность Docker.
+# Отсутствие конкретного контейнера допустимо.
+CONTAINERS="$("${SSH[@]}" \
+  'docker container ls --all --no-trunc --format "{{json .}}"')"
+
+OLD_ID="$(printf '%s\n' "$CONTAINERS" |
+  jq -sr --arg name "$CONTAINER" \
+    '[.[] | select(.Names == $name) | .ID][0] // ""')"
 
 cd "$TF_DIR"
 
@@ -81,7 +91,12 @@ if ! jq -e --arg resource "$RESOURCE" '
     | select(.change.actions != ["no-op"])] as $changes
   | ($changes | length) == 1
     and $changes[0].address == $resource
-    and $changes[0].change.actions == ["delete", "create"]
+#    and $changes[0].change.actions == ["delete", "create"]
+    and (
+      $changes[0].change.actions == ["delete", "create"]
+      or $changes[0].change.actions == ["create"]
+    )
+
 ' "$RUN_DIR/plan.json" > /dev/null; then
   echo "План отклонён: есть изменения вне разрешённой замены." >&2
   exit 1

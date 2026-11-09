@@ -28,26 +28,20 @@ resource "docker_image" "opencanary" {
   keep_locally = true
 }
 
-resource "docker_network" "honeypots" {
-  name     = "deception-honeypots"
-  driver   = "bridge"
-  internal = false
-  options = {
-    "com.docker.network.bridge.name" = "br-decoy"
-  }
-}
-
 resource "docker_container" "opencanary" {
   name     = "opencanary-01"
   hostname = "fileserver"
   image    = docker_image.opencanary.image_id
+  start    = true
+  must_run = false
 
-  restart    = "unless-stopped"
-  memory     = 512
-  cpu_shares = 512
+  restart     = "unless-stopped"
+  memory      = 512
+  memory_swap = 1024
+  cpu_shares  = 512
 
   networks_advanced {
-    name = docker_network.honeypots.name
+    name = "deception-honeypots"
   }
 
   ports {
@@ -81,8 +75,4 @@ resource "docker_container" "opencanary" {
     "max-size" = "10m"
     "max-file" = "3"
   }
-}
-
-output "http_url" {
-  value = "http://10.77.10.10"
 }
