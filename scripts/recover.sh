@@ -10,8 +10,8 @@ case "${1:-}" in
   opencanary)
     RESOURCE="docker_container.opencanary"
     CONTAINER="opencanary-01"
-    PYTHON="/opencanary/.venv/bin/python"
-    PORT=80
+#    PYTHON="/opencanary/.venv/bin/python"
+#    PORT=80
     ;;
   cowrie)
     RESOURCE="docker_container.cowrie"
@@ -112,19 +112,19 @@ if [[ "$OLD_ID" == "$NEW_ID" ]]; then
   exit 1
 fi
 
-# Проверяем сервис внутри контейнера.
-CHECK="import socket; s=socket.create_connection(('127.0.0.1',$PORT),3); s.close()"
-
+# Проверяем протоколы тем же модулем, который использует watchdog.
 for attempt in {1..15}; do
-  if "${SSH[@]}" \
-    "docker exec $CONTAINER $PYTHON -c \"$CHECK\"" \
-    > "$RUN_DIR/healthcheck.log" 2>&1; then
+  if python3 "$ROOT/scripts/health_probe.py" "$1" \
+    > "$RUN_DIR/healthcheck.json" \
+    2> "$RUN_DIR/healthcheck.log"; then
+
     STATUS="success"
-    echo "Контейнер $CONTAINER заменён, сервис принимает соединения."
+    echo "Контейнер $CONTAINER заменён, проверки сервисов успешны."
     exit 0
   fi
+
   sleep 2
 done
 
-echo "Новый контейнер не прошёл проверку готовности." >&2
+echo "Новый контейнер не прошёл проверку сервисов." >&2
 exit 1

@@ -118,4 +118,12 @@ if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in SENSORS:
         raise SystemExit("Usage: health_probe.py opencanary|cowrie")
 
-    print(json.dumps(probe(sys.argv[1]), ensure_ascii=False, indent=2))
+    result = probe(sys.argv[1])
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    if result["healthy"] is True:
+        sys.exit(0)
+    elif result["healthy"] is False:
+        sys.exit(1)
+    else:
+        sys.exit(2)
