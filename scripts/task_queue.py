@@ -5,6 +5,7 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
+from queue_policy import QueuePolicy
 
 FAULTS = {"exited", "dead", "missing", "unhealthy"}
 SENSORS = {"opencanary": "opencanary-01", "cowrie": "cowrie-01"}
@@ -32,6 +33,7 @@ class TaskQueue:
             WHERE status IN ('queued', 'running', 'interrupted')
         """)
         db.commit()
+        self.policy = QueuePolicy(db, log)
 
     def reconcile(self):
         with (self.root / "runtime/recovery.lock").open("a") as lock:
@@ -62,6 +64,9 @@ class TaskQueue:
         if sensor not in SENSORS or reason not in FAULTS:
             raise ValueError("Unknown sensor or failure reason")
 
+        if not self.policy.allowed(sensor):
+            return None
+
         task_id = uuid.uuid4().hex
         try:
             with self.db:
@@ -76,6 +81,7 @@ class TaskQueue:
         self.log("task_queued", task_id=task_id,
                  sensor=sensor, reason=reason)
         return task_id
+
 
     def run_next(self, states):
         if not self.reconcile():
@@ -100,6 +106,8 @@ class TaskQueue:
                 continue
 
             if state not in FAULTS:
+                continue
+            if not self.policy.allowed(sensor):
                 continue
 
             with self.db:
