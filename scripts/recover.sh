@@ -51,6 +51,7 @@ RUN_DIR="$(mktemp -d "$ROOT/runtime/recovery/${1}-${MODE}-XXXXXXXX")"
 START="$(date +%s)"
 STATUS="failed"
 ARCHIVE_VERIFIED=false
+GATE_CLOSED=false
 
 finish() {
   CODE=$?
@@ -66,6 +67,7 @@ finish() {
     --arg new_id "${NEW_ID:-}" \
     --argjson archive_verified "$ARCHIVE_VERIFIED" \
     --argjson exit_code "$CODE" \
+    --argjson gate_closed "$GATE_CLOSED" \
     --argjson duration_seconds "$(( $(date +%s) - START ))" \
     '{
       task_id: $task_id,
@@ -77,6 +79,7 @@ finish() {
       new_id: $new_id,
       archive_verified: $archive_verified,
       exit_code: $exit_code,
+      gate_closed: $gate_closed,
       duration_seconds: $duration_seconds
     }' > "$RUN_DIR/result.json"
   jq -c \
@@ -147,6 +150,23 @@ if [[ "$MODE" == "reset-state" ]]; then
   SNAPSHOT_IMAGE="$(jq -er '.[0].Image' "$RUN_DIR/container.json")"
   [[ "$SNAPSHOT_IMAGE" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
 
+  "${SSH[@]}" sudo -n /usr/local/sbin/deception-cowrie-gate close
+  GATE_CLOSED=true
+
+  "${SSH[@]}" sudo -n /usr/local/sbin/deception-cowrie-gate connections \
+    > "$RUN_DIR/connections-before-reset.json"
+
+  if ! jq -e '.external_connections == 0' \
+    "$RUN_DIR/connections-before-reset.json" > /dev/null; then
+
+    "${SSH[@]}" sudo -n /usr/local/sbin/deception-cowrie-gate open
+    GATE_CLOSED=false
+    STATUS="deferred"
+
+    echo "Сброс отложен: отсутствие внешних соединений не подтверждено." >&2
+    exit 75
+  fi
+
   "${SSH[@]}" docker stop "$CONTAINER"
 
   # Архиватор использует тот же локальный образ, без подключения к сети.
@@ -187,6 +207,10 @@ for attempt in {1..15}; do
   if python3 "$ROOT/scripts/health_probe.py" "$1" \
     > "$RUN_DIR/healthcheck.json" \
     2> "$RUN_DIR/healthcheck.log"; then
+    if [[ "$MODE" == "reset-state" ]]; then
+      "${SSH[@]}" sudo -n /usr/local/sbin/deception-cowrie-gate open
+      GATE_CLOSED=false
+    fi
     STATUS="success"
     echo "Операция $MODE завершена, проверки сервисов успешны."
     exit 0
