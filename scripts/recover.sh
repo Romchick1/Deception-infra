@@ -60,6 +60,7 @@ finish() {
     --arg status "$STATUS" \
     --arg mode "$MODE" \
     --arg container "$CONTAINER" \
+    --arg task_id "${DECEPTION_TASK_ID:-manual}" \
     --arg resource "$RESOURCE" \
     --arg old_id "${OLD_ID:-}" \
     --arg new_id "${NEW_ID:-}" \
@@ -67,6 +68,7 @@ finish() {
     --argjson exit_code "$CODE" \
     --argjson duration_seconds "$(( $(date +%s) - START ))" \
     '{
+      task_id: $task_id,
       status: $status,
       mode: $mode,
       container: $container,
@@ -77,6 +79,15 @@ finish() {
       exit_code: $exit_code,
       duration_seconds: $duration_seconds
     }' > "$RUN_DIR/result.json"
+  jq -c \
+    --arg run_dir "$RUN_DIR" \
+    '. + {
+      event: "operation_finished",
+      timestamp: (now | todateiso8601),
+      operation_status: .status,
+      run_dir: $run_dir
+    } | del(.status)' "$RUN_DIR/result.json" \
+    >> "$ROOT/runtime/operations.jsonl"
 
   echo "Результат: $RUN_DIR/result.json"
   exit "$CODE"

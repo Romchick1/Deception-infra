@@ -5,6 +5,7 @@ import json
 import sqlite3
 import subprocess
 import time
+from task_queue import TaskQueue
 from health_probe import probe_services
 from pathlib import Path
 
@@ -55,7 +56,7 @@ def log(event, **fields):
     with (RUNTIME / "watchdog.jsonl").open("a") as stream:
         stream.write(line + "\n")
 
-
+queue = TaskQueue(db, ROOT, log)
 #def inspect_containers():
 #    result = subprocess.run(
 #        [
@@ -163,6 +164,8 @@ while True:
             continue
 
         # Ограничение частоты действует и после неудачной попытки.
+
+        queue.enqueue(sensor, reason=state)
         db.execute(
             "UPDATE sensors SET failures = 0, last_attempt = ? WHERE name = ?",
             (time.time(), sensor),
@@ -180,4 +183,7 @@ while True:
             exit_code=result.returncode,
         )
 
+        queue.enqueue(sensor, reason=state)
+
+    queue.run_next(states)
     time.sleep(INTERVAL)
