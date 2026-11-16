@@ -27,7 +27,7 @@ case "$MODE" in
       echo "reset-state реализован только для Cowrie." >&2
       exit 2
     }
-    if systemctl is-active --quiet deception-watchdog; then
+    if [[ -z "${DECEPTION_TASK_ID:-}" ]] && systemctl is-active --quiet deception-watchdog; then
       echo "Сначала останови deception-watchdog." >&2
       exit 2
     fi
@@ -92,10 +92,40 @@ finish() {
     } | del(.status)' "$RUN_DIR/result.json" \
     >> "$ROOT/runtime/operations.jsonl"
 
+  if [[ "${DECEPTION_TASK_ID:-}" =~ ^[0-9a-f]{32}$ ]]; then
+    mkdir -p "$ROOT/runtime/task-results"
+    cp "$RUN_DIR/result.json" "$ROOT/runtime/task-results/${DECEPTION_TASK_ID}.tmp"
+    mv "$ROOT/runtime/task-results/${DECEPTION_TASK_ID}.tmp" \
+      "$ROOT/runtime/task-results/${DECEPTION_TASK_ID}.json"
+  fi
   echo "Результат: $RUN_DIR/result.json"
   exit "$CODE"
 }
 trap finish EXIT
+
+if [[ -n "${DECEPTION_TASK_ID:-}" ]]; then
+  python3 "$ROOT/scripts/task_guard.py" authorize "$1" "$MODE" \
+    > "$RUN_DIR/authorization.json"
+fi
+
+# On uncertainty, keep ingress closed. Known deferral/cancellation reopens it.
+revalidate_queued_reset() {
+  local check_code=0
+  python3 "$ROOT/scripts/task_guard.py" revalidate "$1" "$MODE" \
+    > "$RUN_DIR/security-check.json" || check_code=$?
+  if [[ "$check_code" != 0 ]]; then
+    if [[ "$GATE_CLOSED" == true ]]; then
+      "${SSH[@]}" sudo -n /usr/local/sbin/deception-cowrie-gate open
+      GATE_CLOSED=false
+    fi
+    if [[ "$check_code" == 76 ]]; then
+      STATUS="cancelled"
+      exit 76
+    fi
+    STATUS="deferred"
+    exit 75
+  fi
+}
 
 SSH=(ssh -o BatchMode=yes -o ConnectTimeout=10 decoy)
 
@@ -117,6 +147,10 @@ if [[ "$MODE" == "reset-state" ]]; then
 
   REPLACE_ARGS+=("-replace=docker_volume.cowrie_state")
   ALLOWED='["docker_container.cowrie","docker_volume.cowrie_state"]'
+fi
+
+if [[ "$MODE" == "reset-state" && -n "${DECEPTION_TASK_ID:-}" ]]; then
+  revalidate_queued_reset "$1"
 fi
 
 cd "$TF_DIR"
@@ -141,6 +175,14 @@ if ! jq -e --argjson allowed "$ALLOWED" --arg mode "$MODE" '
 fi
 
 if [[ "$MODE" == "reset-state" ]]; then
+  if ! jq -e --arg expected "$OLD_ID" '
+    [.resource_changes[] | select(.address == "docker_container.cowrie")][0] |
+    .change.before.id == $expected
+  ' "$RUN_DIR/plan.json" > /dev/null; then
+    STATUS="cancelled"
+    echo "Cowrie изменился во время планирования; сброс отменён." >&2
+    exit 76
+  fi
   "${SSH[@]}" docker volume inspect deception-cowrie-state \
     > "$RUN_DIR/volume.json"
 
@@ -167,7 +209,12 @@ if [[ "$MODE" == "reset-state" ]]; then
     exit 75
   fi
 
-  "${SSH[@]}" docker stop "$CONTAINER"
+  if [[ -n "${DECEPTION_TASK_ID:-}" ]]; then
+    revalidate_queued_reset "$1"
+  fi
+
+  # Stop the instance inspected and planned, never a different container of the same name.
+  "${SSH[@]}" docker stop "$OLD_ID"
 
   # Архиватор использует тот же локальный образ, без подключения к сети.
   # Том и журнал подключаются только для чтения.

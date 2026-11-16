@@ -35,6 +35,22 @@ class QueuePolicy:
                 reason TEXT NOT NULL
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS recovery_attempts (
+                id TEXT PRIMARY KEY, task_id TEXT NOT NULL,
+                sensor TEXT NOT NULL, started REAL NOT NULL,
+                finished REAL, exit_code INTEGER
+            )
+        """)
+        # Preserve the previous budget: one historical start per legacy task.
+        db.execute("""
+            INSERT OR IGNORE INTO recovery_attempts
+              (id,task_id,sensor,started,finished,exit_code)
+            SELECT 'legacy:' || t.id,t.id,t.sensor,t.started,t.finished,t.exit_code
+            FROM recovery_tasks t
+            WHERE t.started IS NOT NULL AND NOT EXISTS
+              (SELECT 1 FROM recovery_attempts a WHERE a.task_id=t.id)
+        """)
         for sensor in SENSORS:
             db.execute(
                 "INSERT OR IGNORE INTO sensor_controls(sensor) VALUES (?)",
@@ -82,8 +98,8 @@ class QueuePolicy:
             return False
 
         count = self.db.execute("""
-            SELECT COUNT(*) FROM recovery_tasks
-            WHERE sensor=? AND started IS NOT NULL AND started>=?
+            SELECT COUNT(*) FROM recovery_attempts
+            WHERE sensor=? AND started>=?
         """, (sensor, max(time.time() - WINDOW, since))).fetchone()[0]
 
         if count >= MAX_ATTEMPTS:
@@ -195,11 +211,11 @@ def main():
                     ))))
 
                 for row in db.execute("""
-                    SELECT id, sensor, status FROM recovery_tasks
-                    WHERE status IN ('queued','running','interrupted')
+                    SELECT id, sensor, status, operation_mode, security_session FROM recovery_tasks
+                    WHERE status IN ('queued','deferred','running','interrupted')
                 """):
                     print(json.dumps(dict(zip(
-                        ("task_id", "sensor", "task_status"), row
+                        ("task_id", "sensor", "task_status", "operation_mode", "session"), row
                     ))))
             else:
                 getattr(policy, args.action)(
