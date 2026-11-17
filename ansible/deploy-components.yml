@@ -1,0 +1,19 @@
+---
+- name: Install Deception-Infra configuration files
+  hosts: control:decoy:monitoring
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars/component-files.yml
+  tasks:
+    - name: Install each file with its required permissions
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/files/{{ inventory_hostname }}{{ item.path }}"
+        dest: "{{ item.path }}"
+        owner: root
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+        validate: "{{ item.validate | default(omit) }}"
+      loop: "{{ component_files_by_host[inventory_hostname] }}"
+      loop_control:
+        label: "{{ item.path }}"

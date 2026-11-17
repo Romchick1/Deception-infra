@@ -1,0 +1,34 @@
+---
+- name: Prepare the Cowrie event feed
+  hosts: monitoring
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Prepare feed directory
+      ansible.builtin.file:
+        path: /var/lib/deception-feed
+        state: directory
+        owner: root
+        group: wazuh
+        mode: '0750'
+
+    - name: Ensure the event file exists
+      ansible.builtin.file:
+        path: /var/lib/deception-feed/events.jsonl
+        state: touch
+        owner: wazuh
+        group: wazuh
+        mode: '0640'
+        access_time: preserve
+        modification_time: preserve
+
+    - name: Grant labadmin read access to the feed
+      ansible.posix.acl:
+        path: "{{ item.path }}"
+        entity: labadmin
+        etype: user
+        permissions: "{{ item.permissions }}"
+        state: present
+      loop:
+        - {path: /var/lib/deception-feed, permissions: 'r-x'}
+        - {path: /var/lib/deception-feed/events.jsonl, permissions: 'r--'}

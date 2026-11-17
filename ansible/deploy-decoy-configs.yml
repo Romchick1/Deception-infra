@@ -1,0 +1,18 @@
+---
+- name: Install Docker bind mount configuration files
+  hosts: decoy
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Copy configuration from the project to decoy
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../configs/{{ item }}"
+        dest: "/opt/deception/{{ item }}"
+        owner: root
+        group: root
+        mode: '0644'
+      diff: false
+      loop:
+        - opencanary/opencanary.conf
+        - cowrie/cowrie.cfg
+        - cowrie/userdb.txt

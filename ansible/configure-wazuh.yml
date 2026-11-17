@@ -1,0 +1,41 @@
+---
+- name: Configure Wazuh for Deception-Infra
+  hosts: control:decoy:monitoring
+  become: true
+  gather_facts: false
+  vars:
+    wazuh_config: /var/ossec/etc/ossec.conf
+    wazuh_validator: >-
+      {{ 'wazuh-integratord' if inventory_hostname == 'monitoring'
+         else 'wazuh-logcollector' }}
+    wazuh_service: >-
+      {{ 'wazuh-manager' if inventory_hostname == 'monitoring'
+         else 'wazuh-agent' }}
+
+  tasks:
+    - name: Find missing sections and detect conflicts
+      ansible.builtin.script:
+        cmd: "scripts/check-wazuh-config.py {{ inventory_hostname }}"
+        executable: /usr/bin/python3
+      register: wazuh_sections
+      check_mode: false
+      changed_when: false
+
+    - name: Install missing sections
+      ansible.builtin.blockinfile:
+        path: "{{ wazuh_config }}"
+        marker: "  <!-- {mark} ANSIBLE DECEPTION {{ item.label }} -->"
+        insertbefore: '^\s*</ossec_config>\s*$'
+        block: "{{ item.xml }}"
+        backup: true
+        validate: "/var/ossec/bin/{{ wazuh_validator }} -t -c %s"
+      loop: "{{ wazuh_sections.stdout | from_json }}"
+      loop_control:
+        label: "{{ item.label }}"
+      notify: Restart Wazuh
+
+  handlers:
+    - name: Restart Wazuh
+      ansible.builtin.systemd_service:
+        name: "{{ wazuh_service }}"
+        state: restarted

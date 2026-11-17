@@ -1,0 +1,14 @@
+all:
+  children:
+    controller:
+      hosts:
+        control:
+          ansible_connection: local
+    managed:
+      vars:
+        ansible_connection: ssh
+        ansible_user: labadmin
+        ansible_python_interpreter: /usr/bin/python3
+      hosts:
+        monitoring:
+        decoy:

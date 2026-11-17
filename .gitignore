@@ -10,3 +10,16 @@ crash.log
 *.key
 
 /runtime/
+/configs/security-response.json
+/configs/cowrie/userdb.txt
+
+# Deployment-generated files
+/runtime/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+__pycache__/
+*.pyc

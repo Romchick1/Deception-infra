@@ -1,0 +1,110 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+IPTABLES=/usr/sbin/iptables
+DOCKER=/usr/bin/docker
+
+RULE=(
+  -i enp0s8
+  -o br-decoy
+  -p tcp
+  --dport 2222
+  -m conntrack
+  --ctstate NEW
+  -j REJECT
+  --reject-with tcp-reset
+)
+
+case "${1:-}" in
+  close)
+    "$IPTABLES" -w -S DOCKER-USER > /dev/null
+
+    if ! "$IPTABLES" -w -C DOCKER-USER "${RULE[@]}" 2>/dev/null; then
+      "$IPTABLES" -w -I DOCKER-USER 1 "${RULE[@]}"
+    fi
+
+    echo "closed"
+    ;;
+
+  open)
+    "$IPTABLES" -w -S DOCKER-USER > /dev/null
+
+    while "$IPTABLES" -w -C DOCKER-USER "${RULE[@]}" 2>/dev/null; do
+      "$IPTABLES" -w -D DOCKER-USER "${RULE[@]}"
+    done
+
+    echo "open"
+    ;;
+
+  status)
+    "$IPTABLES" -w -S DOCKER-USER > /dev/null
+
+    if "$IPTABLES" -w -C DOCKER-USER "${RULE[@]}" 2>/dev/null; then
+      echo "closed"
+    else
+      echo "open"
+    fi
+    ;;
+
+  connections)
+    "$DOCKER" exec -i cowrie-01 \
+      /cowrie/cowrie-env/bin/python - <<'PY'
+import ipaddress
+import json
+import socket
+from pathlib import Path
+
+connections = []
+
+for filename, family in (
+    ("/proc/net/tcp", socket.AF_INET),
+    ("/proc/net/tcp6", socket.AF_INET6),
+):
+    path = Path(filename)
+    if not path.exists() and family == socket.AF_INET6:
+        continue
+
+    for line in path.read_text().splitlines()[1:]:
+        fields = line.split()
+        local = fields[1]
+        remote = fields[2]
+        state = fields[3]
+
+        if int(local.rsplit(":", 1)[1], 16) != 2222:
+            continue
+
+        # LISTEN, TIME_WAIT и CLOSED не считаем активной сессией.
+        if state in {"0A", "06", "07"}:
+            continue
+
+        raw_address, raw_port = remote.split(":")
+        raw = bytes.fromhex(raw_address)
+        raw = b"".join(
+            raw[i:i + 4][::-1] for i in range(0, len(raw), 4)
+        )
+        address = ipaddress.ip_address(
+            socket.inet_ntop(family, raw)
+        )
+        mapped = getattr(address, "ipv4_mapped", None)
+
+        if address.is_loopback or (mapped and mapped.is_loopback):
+            continue
+
+        connections.append({
+            "source_ip": str(address),
+            "source_port": int(raw_port, 16),
+            "tcp_state": state,
+        })
+
+print(json.dumps({
+    "external_connections": len(connections),
+    "connections": connections,
+}))
+PY
+    ;;
+
+  *)
+    echo "Usage: $0 close|open|status|connections" >&2
+    exit 2
+    ;;
+esac

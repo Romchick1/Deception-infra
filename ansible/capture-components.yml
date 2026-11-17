@@ -1,0 +1,16 @@
+---
+- name: Capture installed Deception-Infra configuration
+  hosts: control:decoy:monitoring
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars/component-files.yml
+  tasks:
+    - name: Fetch project-owned files
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "{{ playbook_dir }}/files/"
+        fail_on_missing: true
+      loop: "{{ component_files_by_host[inventory_hostname] }}"
+      loop_control:
+        label: "{{ item.path }}"

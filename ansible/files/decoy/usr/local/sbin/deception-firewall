@@ -1,0 +1,30 @@
+#!/bin/bash
+set -euo pipefail
+
+iptables -S DOCKER-USER >/dev/null
+
+iptables -N DECEPTION 2>/dev/null || true
+iptables -F DECEPTION
+# Запрет IPv4-трафика между контейнерами общего bridge.
+iptables -A DECEPTION -i br-decoy -o br-decoy -j DROP
+
+# Ответы контейнера на установленные соединения.
+iptables -A DECEPTION -i br-decoy \
+  -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# HTTP и FTP только от тестовой машины.
+iptables -A DECEPTION -i enp0s8 -o br-decoy \
+  -s 10.77.10.100 -p tcp \
+  -m multiport --dports 21,80,2222 -j ACCEPT
+
+# Остальной трафик к контейнерам и от них запрещён.
+iptables -A DECEPTION -i br-decoy -j DROP
+iptables -A DECEPTION -o br-decoy -j DROP
+iptables -A DECEPTION -j RETURN
+
+iptables -C DOCKER-USER -j DECEPTION 2>/dev/null ||
+  iptables -I DOCKER-USER 1 -j DECEPTION
+
+# Запрет обращения контейнеров к сервисам самого decoy.
+iptables -C INPUT -i br-decoy -j DROP 2>/dev/null ||
+  iptables -I INPUT 1 -i br-decoy -j DROP

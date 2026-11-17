@@ -1,0 +1,30 @@
+<group name="deception,recovery,operations,">
+
+  <rule id="100310" level="0">
+    <decoded_as>json</decoded_as>
+    <location type="pcre2">/deception-infra/runtime/operations\.jsonl$</location>
+    <field name="event" type="pcre2">^operation_finished$</field>
+    <description>Deception operation result</description>
+  </rule>
+
+  <rule id="100311" level="3">
+    <if_sid>100310</if_sid>
+    <field name="operation_status" type="pcre2">^success$</field>
+    <field name="mode" type="pcre2">^replace$</field>
+    <description>Container replacement succeeded: $(container)</description>
+  </rule>
+
+  <rule id="100312" level="4">
+    <if_sid>100310</if_sid>
+    <field name="operation_status" type="pcre2">^success$</field>
+    <field name="mode" type="pcre2">^reset-state$</field>
+    <description>State reset succeeded: $(container)</description>
+  </rule>
+
+  <rule id="100313" level="9">
+    <if_sid>100310</if_sid>
+    <field name="operation_status" type="pcre2">^failed$</field>
+    <description>Deception operation failed: $(container), mode $(mode)</description>
+  </rule>
+
+</group>

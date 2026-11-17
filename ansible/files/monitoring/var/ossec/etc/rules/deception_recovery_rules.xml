@@ -1,0 +1,50 @@
+<group name="deception,recovery,">
+
+  <rule id="100300" level="0">
+    <decoded_as>json</decoded_as>
+    <location type="pcre2">/deception-infra/runtime/watchdog\.jsonl$</location>
+    <field name="event" type="pcre2">.+</field>
+    <description>Deception watchdog event</description>
+  </rule>
+
+  <rule id="100301" level="5">
+    <if_sid>100300</if_sid>
+    <field name="event" type="pcre2">^failure_observed$</field>
+    <field name="count" type="pcre2">^3$</field>
+    <description>Deception sensor failure confirmed: $(sensor)</description>
+  </rule>
+
+  <rule id="100302" level="3">
+    <if_sid>100300</if_sid>
+    <field name="event" type="pcre2">^recovery_started$</field>
+    <description>Deception recovery started: $(sensor)</description>
+  </rule>
+
+  <rule id="100303" level="3">
+    <if_sid>100300</if_sid>
+    <field name="event" type="pcre2">^recovery_finished$</field>
+    <field name="exit_code" type="pcre2">^0$</field>
+    <description>Deception recovery succeeded: $(sensor)</description>
+  </rule>
+
+  <rule id="100304" level="9">
+    <if_sid>100300</if_sid>
+    <field name="event" type="pcre2">^recovery_finished$</field>
+    <field name="exit_code" type="pcre2">^[1-9][0-9]*$</field>
+    <description>Deception recovery failed: $(sensor)</description>
+  </rule>
+
+  <rule id="100305" level="9">
+    <if_sid>100300</if_sid>
+    <field name="event" type="pcre2">^sensor_paused$</field>
+    <field name="reason" type="pcre2">^(attempt_limit|interrupted_task)$</field>
+    <description>Automatic recovery blocked: $(sensor), reason $(reason)</description>
+  </rule>
+
+  <rule id="100306" level="4">
+    <if_sid>100300</if_sid>
+    <field name="event" type="pcre2">^security_reset_candidate$</field>
+    <description>Observed Cowrie reset candidate: session $(session)</description>
+  </rule>
+
+</group>

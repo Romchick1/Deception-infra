@@ -1,0 +1,55 @@
+#!/usr/bin/python3
+import fcntl
+import json
+import re
+import sys
+from pathlib import Path
+
+RULES = {
+    "100202": "cowrie.login.success",
+    "100203": "cowrie.command.input",
+    "100204": "cowrie.session.closed",
+    "100205": "cowrie.session.connect",
+}
+
+alert = json.loads(Path(sys.argv[1]).read_text())
+rule_id = str(alert.get("rule", {}).get("id", ""))
+data = alert.get("data", {})
+agent = alert.get("agent", {})
+
+if agent.get("name") != "decoy":
+    raise SystemExit(0)
+
+if rule_id not in RULES:
+    raise SystemExit(0)
+
+if data.get("eventid") != RULES[rule_id]:
+    raise SystemExit("Unexpected Cowrie event type")
+
+session = data.get("session", "")
+if not isinstance(session, str) or not re.fullmatch(
+    r"[A-Za-z0-9_.:-]{1,128}", session
+):
+    raise SystemExit("Missing or invalid Cowrie session")
+
+alert_id = str(alert.get("id", ""))
+if not alert_id or len(alert_id) > 128:
+    raise SystemExit("Missing or invalid alert ID")
+
+record = {
+    "schema_version": 1,
+    "event_id": str(alert.get("manager", {}).get("name", "")) + ":" + alert_id,
+    "timestamp": alert.get("timestamp"),
+    "agent_id": str(agent.get("id", "")),
+    "agent_name": "decoy",
+    "sensor": "cowrie",
+    "rule_id": rule_id,
+    "event_type": RULES[rule_id],
+    "session": session,
+    "source_ip": str(data.get("src_ip", ""))[:64],
+}
+
+with open("/var/lib/deception-feed/events.jsonl", "a") as stream:
+    fcntl.flock(stream, fcntl.LOCK_EX)
+    stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+    stream.flush()

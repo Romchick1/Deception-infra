@@ -1,0 +1,22 @@
+---
+- name: Prepare controller tools
+  hosts: controller
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Install tools used by deployment and recovery
+      ansible.builtin.apt:
+        name:
+          - jq
+          - util-linux
+        state: present
+
+- name: Prepare monitoring tools
+  hosts: monitoring
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Install ACL utilities for the event feed
+      ansible.builtin.apt:
+        name: acl
+        state: present

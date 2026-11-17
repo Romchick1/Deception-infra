@@ -1,0 +1,41 @@
+<group name="deception,cowrie,">
+
+  <rule id="100200" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="eventid" type="pcre2">^cowrie\.</field>
+    <description>Cowrie event</description>
+  </rule>
+
+  <rule id="100201" level="5">
+    <if_sid>100200</if_sid>
+    <field name="eventid" type="pcre2">^cowrie\.login\.failed$</field>
+    <description>Cowrie failed login from $(src_ip)</description>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="100202" level="7">
+    <if_sid>100200</if_sid>
+    <field name="eventid" type="pcre2">^cowrie\.login\.success$</field>
+    <description>Cowrie successful honeypot login from $(src_ip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="100203" level="8">
+    <if_sid>100200</if_sid>
+    <field name="eventid" type="pcre2">^cowrie\.command\.input$</field>
+    <description>Cowrie command in session $(session): $(input)</description>
+  </rule>
+
+  <rule id="100204" level="3">
+    <if_sid>100200</if_sid>
+    <field name="eventid" type="pcre2">^cowrie\.session\.closed$</field>
+    <description>Cowrie session closed: $(session)</description>
+  </rule>
+
+  <rule id="100205" level="3">
+    <if_sid>100200</if_sid>
+    <field name="eventid" type="pcre2">^cowrie\.session\.connect$</field>
+    <description>Cowrie session connected: $(session)</description>
+  </rule>
+
+</group>

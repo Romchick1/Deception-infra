@@ -1,0 +1,16 @@
+component_files_by_host:
+  control:
+    - {path: /etc/systemd/system/deception-watchdog.service, group: root, mode: '0644'}
+  decoy:
+    - {path: /etc/systemd/system/deception-firewall.service, group: root, mode: '0644'}
+    - {path: /usr/local/sbin/deception-firewall, group: root, mode: '0750', validate: '/bin/bash -n %s'}
+    - {path: /usr/local/sbin/deception-cowrie-gate, group: root, mode: '0750', validate: '/bin/bash -n %s'}
+    - {path: /etc/sudoers.d/deception-cowrie-gate, group: root, mode: '0440', validate: '/usr/sbin/visudo -cf %s'}
+    - {path: /etc/modules-load.d/deception-bridge.conf, group: root, mode: '0644'}
+    - {path: /etc/sysctl.d/99-deception-bridge.conf, group: root, mode: '0644'}
+  monitoring:
+    - {path: /var/ossec/etc/rules/cowrie_rules.xml, group: root, mode: '0644'}
+    - {path: /var/ossec/etc/rules/opencanary_rules.xml, group: root, mode: '0644'}
+    - {path: /var/ossec/etc/rules/deception_recovery_rules.xml, group: root, mode: '0644'}
+    - {path: /var/ossec/etc/rules/deception_operations_rules.xml, group: root, mode: '0644'}
+    - {path: /var/ossec/integrations/custom-deception-feed, group: wazuh, mode: '0750'}

@@ -1,0 +1,23 @@
+[Unit]
+Description=Deception infrastructure watchdog
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=labadmin
+Group=labadmin
+WorkingDirectory=/home/labadmin/deception-infra
+Environment=HOME=/home/labadmin
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+ExecStart=/usr/bin/python3 /home/labadmin/deception-infra/scripts/watchdog.py
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=300
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

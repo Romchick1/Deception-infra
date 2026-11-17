@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "enabled_since": 0,
+  "quiet_seconds": 60,
+  "fresh_seconds": 60,
+  "max_task_age": 300,
+  "retry_delay": 30,
+  "cooldown": 120
+}

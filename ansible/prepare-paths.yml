@@ -1,0 +1,39 @@
+---
+- name: Prepare watchdog data directories
+  hosts: controller
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Create directories for queue data and operation results
+      ansible.builtin.file:
+        path: "/home/labadmin/deception-infra/{{ item }}"
+        state: directory
+        owner: labadmin
+        group: labadmin
+        mode: '0700'
+      loop:
+        - runtime
+        - runtime/recovery
+        - runtime/task-results
+
+- name: Prepare container mount directories
+  hosts: decoy
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Create directories for decoy configuration and logs
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - {path: /opt/deception, owner: root, group: root, mode: '0755'}
+        - {path: /opt/deception/opencanary, owner: root, group: root, mode: '0755'}
+        - {path: /opt/deception/cowrie, owner: root, group: root, mode: '0755'}
+        - {path: /var/log/deception, owner: root, group: root, mode: '0755'}
+        - {path: /var/log/deception/opencanary, owner: '65534', group: '65534', mode: '0750'}
+        - {path: /var/log/deception/cowrie, owner: '999', group: '999', mode: '0750'}
+      loop_control:
+        label: "{{ item.path }}"

@@ -1,0 +1,23 @@
+<group name="deception,opencanary,">
+
+  <rule id="100100" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="node_id" type="pcre2">^opencanary-01$</field>
+    <description>OpenCanary event</description>
+  </rule>
+
+  <rule id="100101" level="6">
+    <if_sid>100100</if_sid>
+    <field name="logtype" type="pcre2">^2000$</field>
+    <description>OpenCanary FTP authentication attempt from $(src_host)</description>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="100102" level="6">
+    <if_sid>100100</if_sid>
+    <field name="logtype" type="pcre2">^3001$</field>
+    <description>OpenCanary HTTP login attempt from $(src_host)</description>
+    <group>authentication_attempt,</group>
+  </rule>
+
+</group>

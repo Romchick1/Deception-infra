@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+import fcntl
+import datetime
+import json
+import sqlite3
+import subprocess
+import time
+from health_probe import probe_services
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+RUNTIME = ROOT / "runtime"
+RUNTIME.mkdir(mode=0o700, exist_ok=True)
+instance_lock = (RUNTIME / "watchdog.lock").open("a")
+try:
+    fcntl.flock(
+        instance_lock.fileno(),
+        fcntl.LOCK_EX | fcntl.LOCK_NB,
+    )
+except BlockingIOError:
+    raise SystemExit("Watchdog уже запущен")
+
+INTERVAL = 10
+FAILURE_THRESHOLD = 3
+COOLDOWN = 120
+
+SENSORS = {
+    "opencanary": "opencanary-01",
+    "cowrie": "cowrie-01",
+}
+
+db = sqlite3.connect(RUNTIME / "watchdog.sqlite3")
+db.execute("""
+    CREATE TABLE IF NOT EXISTS sensors (
+        name TEXT PRIMARY KEY,
+        failures INTEGER NOT NULL DEFAULT 0,
+        last_attempt REAL NOT NULL DEFAULT 0
+    )
+""")
+for name in SENSORS:
+    db.execute("INSERT OR IGNORE INTO sensors(name) VALUES (?)", (name,))
+db.commit()
+
+
+def log(event, **fields):
+    record = {
+        "timestamp": datetime.datetime.now(
+            datetime.timezone.utc
+        ).isoformat(),
+        "event": event,
+        **fields,
+    }
+    line = json.dumps(record, ensure_ascii=False)
+    print(line, flush=True)
+    with (RUNTIME / "watchdog.jsonl").open("a") as stream:
+        stream.write(line + "\n")
+
+
+#def inspect_containers():
+#    result = subprocess.run(
+#        [
+#            "ssh",
+#            "-o", "BatchMode=yes",
+#            "-o", "ConnectTimeout=5",
+#            "decoy",
+#            "docker", "inspect", *SENSORS.values(),
+#        ],
+#        capture_output=True,
+#        text=True,
+#        timeout=20,
+#    )
+#    if result.returncode != 0:
+#        raise RuntimeError(result.stderr.strip() or "docker inspect failed")
+#
+#    items = json.loads(result.stdout)
+#    return {
+#        item["Name"].lstrip("/"): item["State"]["Status"]
+#        for item in items
+#    }
+
+def inspect_containers():
+    result = subprocess.run(
+        [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=5",
+            "decoy",
+            'docker container ls --all --format "{{json .}}"',
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "Docker unavailable")
+
+    items = [
+        json.loads(line)
+        for line in result.stdout.splitlines()
+        if line.strip()
+    ]
+    return {item["Names"]: item["State"] for item in items}
+
+log("watchdog_started")
+
+while True:
+    try:
+        states = inspect_containers()
+        states = probe_services(states, log)
+    except (RuntimeError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
+        # Ошибка SSH/Docker не является доказательством отказа приманки.
+        db.execute("UPDATE sensors SET failures = 0")
+        db.commit()
+        log("inspection_unavailable", error=str(exc))
+        time.sleep(INTERVAL)
+        continue
+
+    for sensor, container in SENSORS.items():
+        state = states.get(container, "missing")
+        failures, last_attempt = db.execute(
+            "SELECT failures, last_attempt FROM sensors WHERE name = ?",
+            (sensor,),
+        ).fetchone()
+
+        if state == "running":
+            db.execute(
+                "UPDATE sensors SET failures = 0 WHERE name = ?",
+                (sensor,),
+            )
+            db.commit()
+            continue
+
+        # Переходные и неизвестные состояния не запускают восстановление.
+        if state not in {"exited", "dead", "missing", "unhealthy"}:
+            db.execute(
+                "UPDATE sensors SET failures = 0 WHERE name = ?",
+                (sensor,),
+            )
+            db.commit()
+            log("state_requires_review", sensor=sensor, state=state)
+            continue
+
+        failures += 1
+        db.execute(
+            "UPDATE sensors SET failures = ? WHERE name = ?",
+            (failures, sensor),
+        )
+        db.commit()
+        log("failure_observed", sensor=sensor, state=state, count=failures)
+
+        if failures < FAILURE_THRESHOLD:
+            continue
+#        if time.time() - last_attempt < COOLDOWN:
+#            continue
+        remaining = COOLDOWN - (time.time() - last_attempt)
+        if remaining > 0:
+            log(
+                "recovery_deferred",
+                sensor=sensor,
+                reason="cooldown",
+                remaining_seconds=int(remaining) + 1,
+            )
+            continue
+
+        # Ограничение частоты действует и после неудачной попытки.
+        db.execute(
+            "UPDATE sensors SET failures = 0, last_attempt = ? WHERE name = ?",
+            (time.time(), sensor),
+        )
+        db.commit()
+        log("recovery_started", sensor=sensor)
+
+        result = subprocess.run(
+            [str(ROOT / "scripts" / "recover.sh"), sensor],
+            cwd=ROOT,
+        )
+        log(
+            "recovery_finished",
+            sensor=sensor,
+            exit_code=result.returncode,
+        )
+
+    time.sleep(INTERVAL)

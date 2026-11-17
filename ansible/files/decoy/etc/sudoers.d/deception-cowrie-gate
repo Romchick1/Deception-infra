@@ -1,0 +1,1 @@
+labadmin ALL=(root) NOPASSWD: /usr/local/sbin/deception-cowrie-gate close, /usr/local/sbin/deception-cowrie-gate open, /usr/local/sbin/deception-cowrie-gate status, /usr/local/sbin/deception-cowrie-gate connections
