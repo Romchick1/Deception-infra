@@ -1,0 +1,1 @@
+opencanary_image = "thinkst/opencanary@sha256:291f43be18a942aac0dcf5ef16148a710d06dd45fccdb5dfda786f8058731cd1"
