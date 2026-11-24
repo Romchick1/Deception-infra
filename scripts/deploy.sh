@@ -61,7 +61,7 @@ printf '\n[3/4] Развёртывание и проверка приманок\
   for module in shared opencanary cowrie; do
     tf_dir="$ROOT/terraform/$module"
     printf '\n--- Terraform: %s ---\n' "$module"
-    terraform -chdir="$tf_dir" init -input=false
+    terraform -chdir="$tf_dir" init -input=false -lockfile=readonly
     terraform -chdir="$tf_dir" apply -input=false -lock-timeout=30s
   done
 
