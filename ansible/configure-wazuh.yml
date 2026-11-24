@@ -5,13 +5,8 @@
   gather_facts: false
   vars:
     wazuh_config: /var/ossec/etc/ossec.conf
-    wazuh_validator: >-
-      {{ 'wazuh-integratord' if inventory_hostname == 'monitoring'
-         else 'wazuh-logcollector' }}
-    wazuh_service: >-
-      {{ 'wazuh-manager' if inventory_hostname == 'monitoring'
-         else 'wazuh-agent' }}
-
+    wazuh_validator: "{{ 'wazuh-integratord' if inventory_hostname == 'monitoring' else 'wazuh-logcollector' }}"
+    wazuh_service: "{{ 'wazuh-manager' if inventory_hostname == 'monitoring' else 'wazuh-agent' }}"
   tasks:
     - name: Find missing sections and detect conflicts
       ansible.builtin.script:
@@ -21,21 +16,54 @@
       check_mode: false
       changed_when: false
 
-    - name: Install missing sections
-      ansible.builtin.blockinfile:
-        path: "{{ wazuh_config }}"
-        marker: "  <!-- {mark} ANSIBLE DECEPTION {{ item.label }} -->"
-        insertbefore: '^\s*</ossec_config>\s*$'
-        block: "{{ item.xml }}"
-        backup: true
-        validate: "/var/ossec/bin/{{ wazuh_validator }} -t -c %s"
-      loop: "{{ wazuh_sections.stdout | from_json }}"
-      loop_control:
-        label: "{{ item.label }}"
-      notify: Restart Wazuh
+    - name: Save configuration before editing
+      ansible.builtin.slurp:
+        src: "{{ wazuh_config }}"
+      register: wazuh_original
 
-  handlers:
-    - name: Restart Wazuh
-      ansible.builtin.systemd_service:
-        name: "{{ wazuh_service }}"
-        state: restarted
+    - name: Apply and validate configuration
+      block:
+        - name: Install missing sections
+          ansible.builtin.blockinfile:
+            path: "{{ wazuh_config }}"
+            marker: "  <!-- {mark} ANSIBLE DECEPTION {{ item.label }} -->"
+            insertbefore: '^\s*</ossec_config>\s*$'
+            block: "{{ item.xml }}"
+            backup: true
+          loop: "{{ wazuh_sections.stdout | from_json }}"
+          loop_control:
+            label: "{{ item.label }}"
+          register: wazuh_changes
+
+        - name: Validate installed Wazuh configuration
+          ansible.builtin.command:
+            argv:
+              - "/var/ossec/bin/{{ wazuh_validator }}"
+              - -t
+          changed_when: false
+          when: not ansible_check_mode
+
+        - name: Restart Wazuh after configuration changes
+          ansible.builtin.systemd_service:
+            name: "{{ wazuh_service }}"
+            state: restarted
+          when: wazuh_changes is changed
+
+      rescue:
+        - name: Restore configuration after failure
+          ansible.builtin.copy:
+            content: "{{ wazuh_original.content | b64decode }}"
+            dest: "{{ wazuh_config }}"
+          when: not ansible_check_mode
+
+        - name: Start Wazuh with restored configuration after restart failure
+          ansible.builtin.systemd_service:
+            name: "{{ wazuh_service }}"
+            state: restarted
+          when:
+            - not ansible_check_mode
+            - ansible_failed_task.name == 'Restart Wazuh after configuration changes'
+
+        - name: Report failed configuration
+          ansible.builtin.fail:
+            msg: "Wazuh configuration failed and its previous content was restored. Check the preceding error."

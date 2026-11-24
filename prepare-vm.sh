@@ -109,12 +109,16 @@ install_agent() {
     apt_repo wazuh https://packages.wazuh.com/key/GPG-KEY-WAZUH \
       https://packages.wazuh.com/4.x/apt/ stable main
     local version
-    version="$(apt-cache madison wazuh-agent | awk '$3 ~ /^4\.14\./ { print $3; exit }')"
+    version="$(apt-cache madison wazuh-agent | awk '$3 ~ /^4\.14\./ && !found { print $3; found=1 }')"
     [[ -n $version ]] || die 'No Wazuh 4.14 agent package found.'
     WAZUH_MANAGER="$1" WAZUH_REGISTRATION_SERVER="$1" WAZUH_AGENT_NAME="$role" \
       apt-get install -y "wazuh-agent=$version"
   fi
+  [[ -s /var/ossec/etc/ossec.conf ]] ||
+    die 'Wazuh agent configuration is missing. Repair the package installation before deployment.'
+  systemctl daemon-reload
   systemctl enable --now wazuh-agent.service
+  systemctl is-active --quiet wazuh-agent.service
 }
 
 case "$role" in

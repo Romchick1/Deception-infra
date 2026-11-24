@@ -1,0 +1,16 @@
+---
+- name: Reload systemd definitions
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: inventory_hostname in ['control', 'decoy']
+
+- name: Validate manager rules before restart
+  ansible.builtin.command: /var/ossec/bin/wazuh-analysisd -t
+  changed_when: false
+  when: inventory_hostname == 'monitoring' and not ansible_check_mode
+
+- name: Restart manager to load installed rules and integration
+  ansible.builtin.systemd_service:
+    name: wazuh-manager
+    state: restarted
+  when: inventory_hostname == 'monitoring'

@@ -4,6 +4,8 @@
 *.tfplan
 *.tfvars
 !*.tfvars.example
+!terraform/opencanary/terraform.tfvars
+!terraform/cowrie/terraform.tfvars
 crash.log
 .env
 *.pem
@@ -11,7 +13,7 @@ crash.log
 
 /runtime/
 /configs/security-response.json
-/configs/cowrie/userdb.txt
+
 
 # Deployment-generated files
 /runtime/

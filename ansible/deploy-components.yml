@@ -15,5 +15,10 @@
         mode: "{{ item.mode }}"
         validate: "{{ item.validate | default(omit) }}"
       loop: "{{ component_files_by_host[inventory_hostname] }}"
+      notify: Reload installed components
       loop_control:
         label: "{{ item.path }}"
+
+  handlers:
+    - name: Reload installed components
+      ansible.builtin.include_tasks: tasks/reload-components.yml

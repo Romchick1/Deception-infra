@@ -1,0 +1,35 @@
+---
+- name: Check Wazuh prerequisites before deployment
+  hosts: control:decoy:monitoring
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check installed Wazuh configuration
+      ansible.builtin.stat:
+        path: /var/ossec/etc/ossec.conf
+      register: wazuh_config_file
+
+    - name: Require Wazuh configuration
+      ansible.builtin.assert:
+        that:
+          - wazuh_config_file.stat.exists
+          - wazuh_config_file.stat.isreg | default(false)
+        fail_msg: "Wazuh is incomplete on {{ inventory_hostname }}. Run prepare-vm.sh for this role and check its output."
+
+    - name: Check Wazuh service
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ 'wazuh-manager' if inventory_hostname == 'monitoring' else 'wazuh-agent' }}"
+      changed_when: false
+      check_mode: false
+
+- name: Check Docker access
+  hosts: decoy
+  gather_facts: false
+  tasks:
+    - name: Require Docker access for labadmin
+      ansible.builtin.command: docker info
+      changed_when: false
+      check_mode: false

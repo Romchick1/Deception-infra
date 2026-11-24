@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+if [[ $EUID == 0 || $(id -un) != labadmin ]]; then
+  echo 'Запусти deploy.sh от labadmin без sudo для доступа к его SSH-ключам и настройкам.' >&2
+  exit 1
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -9,6 +14,20 @@ ansible=(
   -i ansible/inventory.yml
   --ask-become-pass
 )
+
+for tool in ansible-playbook terraform ssh flock python3; do
+  command -v "$tool" >/dev/null || { echo "Не найдена команда $tool. Выполни prepare-vm.sh control." >&2; exit 1; }
+done
+for required in configs/cowrie/userdb.txt terraform/opencanary/terraform.tfvars terraform/cowrie/terraform.tfvars; do
+  [[ -s "$required" ]] || { echo "Отсутствует файл $required в скачанной версии проекта." >&2; exit 1; }
+done
+
+"${ansible[@]}" ansible/preflight.yml
+
+if [[ $(systemctl show deception-watchdog.service -p LoadState --value) == loaded ]]; then
+  sudo systemctl stop deception-watchdog.service
+fi
+trap 'echo "Развёртывание прервано. Исправь ошибку и повтори deploy.sh для запуска watchdog." >&2' ERR
 
 printf '\n[1/4] Подготовка ВМ и настройка Wazuh\n'
 for playbook in \
@@ -43,7 +62,7 @@ printf '\n[3/4] Развёртывание и проверка приманок\
     tf_dir="$ROOT/terraform/$module"
     printf '\n--- Terraform: %s ---\n' "$module"
     terraform -chdir="$tf_dir" init -input=false
-    terraform -chdir="$tf_dir" apply -lock-timeout=30s
+    terraform -chdir="$tf_dir" apply -input=false -lock-timeout=30s
   done
 
   for probe in \
