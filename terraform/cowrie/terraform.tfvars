@@ -1,0 +1,1 @@
+cowrie_image = "cowrie/cowrie@sha256:797d45ca8823d313bec0994232b982f3b99412d4e68e234608d6c1f78d32e3fe"
